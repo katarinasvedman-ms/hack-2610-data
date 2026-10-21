@@ -8,11 +8,13 @@ SortMode = Literal["priority", "health", "importance"]
 
 def station_health(station: Station, snapshot: Snapshot) -> dict:
     days = station.daily
-    eligible = sum(day.eligible_minutes or 0 for day in days)
-    available = sum(day.available_minutes or 0 for day in days)
-    availability_covered = sum(
-        1 for day in days if day.eligible_minutes is not None and day.available_minutes is not None
-    )
+    availability_days = [
+        day for day in days
+        if day.eligible_minutes is not None and day.available_minutes is not None
+    ]
+    eligible = sum(day.eligible_minutes for day in availability_days)
+    available = sum(day.available_minutes for day in availability_days)
+    availability_covered = len(availability_days)
 
     attempt_days = [
         day for day in days
@@ -103,8 +105,8 @@ def history(station: Station, connector_id: str | None = None) -> list[dict]:
     return [
         {
             "date": day.date,
-            "eligible_minutes": day.eligible_minutes,
-            "available_minutes": day.available_minutes,
+            "eligible_minutes": None if connector_id is not None else day.eligible_minutes,
+            "available_minutes": None if connector_id is not None else day.available_minutes,
             "attempts": (
                 day.connector_attempts[connector_id].model_dump()
                 if connector_id is not None
@@ -124,7 +126,7 @@ def maintenance_records(station: Station, connector_id: str | None = None) -> li
     if connector_id is not None and connector_id not in {c.connector_id for c in station.connectors}:
         raise ValueError("unknown connector_id for station")
     return [
-        record.model_dump(mode="json")
+        {**record.model_dump(mode="json"), "scope": "station" if record.connector_id is None else "connector"}
         for record in station.maintenance
         if connector_id is None or record.connector_id in (None, connector_id)
     ]

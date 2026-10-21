@@ -13,13 +13,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .fixture import build_snapshot
+from .fixture import load_snapshot
 from .models import Snapshot
 from .scoring import history, maintenance_records, ranked_health, station_health
 
 app = FastAPI(title="Asset Health PoC API", version="0.1.0")
-SNAPSHOT: Snapshot = build_snapshot()
-REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "false").lower() == "true"
+SNAPSHOT: Snapshot = load_snapshot()
+REQUIRE_AUTH = os.getenv("REQUIRE_AUTH", "true").lower() == "true"
 _conversation_lock = threading.Lock()
 _conversations: dict[tuple[str, UUID], str] = {}
 _USER_ID = re.compile(r"^[A-Za-z0-9._@:-]{1,256}$")
@@ -62,9 +62,27 @@ def get_health(sort: str = "priority", importance: int | None = None):
     }
 
 
+@app.get("/api/status")
+def get_status():
+    return {
+        "auth_required": REQUIRE_AUTH,
+        "foundry_configured": bool(
+            os.getenv("FOUNDRY_PROJECT_ENDPOINT") and os.getenv("FOUNDRY_AGENT_NAME")
+        ),
+    }
+
+
 @app.get("/healthz")
 def healthz():
     return {"status": "ok"}
+
+
+@app.get("/api/sources/{source_id}")
+def get_approved_source(source_id: str):
+    source = APPROVED_SOURCES.get(source_id)
+    if source is None or not source.is_file():
+        raise HTTPException(404, "Approved source not found.")
+    return FileResponse(source, media_type="text/markdown")
 
 
 @app.get("/api/stations/{station_id}")
@@ -110,10 +128,16 @@ async def chat(payload: ChatRequest, request: Request):
     conversation_id = payload.conversation_id or uuid4()
     with _conversation_lock:
         previous_response_id = _conversations.get((user_id, conversation_id))
-    response_id, answer, activity, citations = await asyncio.to_thread(
-        _invoke_foundry, payload, previous_response_id
-    )
+    try:
+        response_id, answer, activity, citations = await asyncio.wait_for(
+            asyncio.to_thread(_invoke_foundry, payload, previous_response_id),
+            timeout=65,
+        )
+    except asyncio.TimeoutError as error:
+        raise HTTPException(504, "Foundry investigation exceeded the 65-second request limit.") from error
     with _conversation_lock:
+        if (user_id, conversation_id) not in _conversations and len(_conversations) >= 1000:
+            _conversations.pop(next(iter(_conversations)))
         _conversations[(user_id, conversation_id)] = response_id
     return {
         "conversation_id": conversation_id,
@@ -142,6 +166,8 @@ def _invoke_foundry(payload: ChatRequest, previous_response_id: str | None):
         credential = DefaultAzureCredential()
         token = credential.get_token("https://ai.azure.com/.default").token
         endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"].rstrip("/")
+        if not endpoint.startswith("https://"):
+            raise RuntimeError("FOUNDRY_PROJECT_ENDPOINT must use HTTPS.")
         agent_name = os.environ["FOUNDRY_AGENT_NAME"]
         version = os.getenv("FOUNDRY_AGENT_VERSION", "1")
         base = f"{endpoint}/openai/v1/responses"
@@ -158,25 +184,49 @@ def _invoke_foundry(payload: ChatRequest, previous_response_id: str | None):
         if previous_response_id:
             body["previous_response_id"] = previous_response_id
         activity: list[dict] = []
+        citations: list[dict] = []
         for _ in range(4):
             response = _post_json(base, body, token)
             response_id = response.get("id")
             if not response_id:
                 raise RuntimeError("Foundry response did not contain an id.")
             output = response.get("output", [])
+            mcp_calls = [
+                item for item in output
+                if item.get("type") == "mcp_call" and item.get("status") == "completed"
+            ]
+            if any(
+                item.get("type") == "mcp_call" and item.get("status") in {"failed", "error"}
+                for item in output
+            ):
+                raise RuntimeError("Foundry IQ knowledge retrieval did not complete.")
+            activity.extend(
+                {"type": "knowledge_retrieval", "status": "completed"}
+                for _ in mcp_calls
+            )
+            citations.extend(_extract_mcp_citations(mcp_calls))
+            _, text_citations = _extract_text_and_citations(output)
+            citations.extend(text_citations)
             calls = [item for item in output if item.get("type") == "function_call"]
             if not calls:
-                answer, citations = _extract_text_and_citations(output)
+                answer, _ = _extract_text_and_citations(output)
                 if not answer:
                     raise RuntimeError("Foundry returned no answer text.")
-                activity.extend(
-                    {"type": "knowledge_retrieval", "status": "completed"}
-                    for item in output
-                    if item.get("type") == "mcp_call" and item.get("status") == "completed"
-                )
-                return response_id, answer, activity, citations
+                unique_citations = []
+                seen_citations = set()
+                for citation in citations:
+                    key = tuple(
+                        citation.get(field)
+                        for field in ("title", "url", "section", "page", "source", "version", "date")
+                    )
+                    if key not in seen_citations:
+                        seen_citations.add(key)
+                        unique_citations.append(citation)
+                return response_id, answer, activity, unique_citations
             results = []
             for call in calls:
+                if not isinstance(call.get("call_id"), str) or not call["call_id"]:
+                    raise ValueError("Foundry function call is missing call_id.")
                 result = _dispatch_tool(call.get("name", ""), call.get("arguments", ""))
                 activity.append({
                     "type": "data_tool",
@@ -219,6 +269,8 @@ def _post_json(url: str, body: dict, token: str) -> dict:
 
 
 def _dispatch_tool(name: str, raw_arguments: str):
+    if not isinstance(raw_arguments, str):
+        raise ValueError("Tool arguments must be a JSON string.")
     if len(raw_arguments) > 8000:
         raise ValueError("Tool arguments exceed the allowed size.")
     arguments = json.loads(raw_arguments)
@@ -231,6 +283,10 @@ def _dispatch_tool(name: str, raw_arguments: str):
         if sort not in {"priority", "health", "importance"}:
             raise ValueError("Unsupported sort.")
         return ranked_health(SNAPSHOT, sort=sort)
+    if name not in {"get_station_history", "get_maintenance_records"}:
+        raise ValueError("Unsupported tool.")
+    if set(arguments) - {"station_id", "connector_id"}:
+        raise ValueError("Unsupported station tool arguments.")
     station_id = arguments.get("station_id")
     if not isinstance(station_id, str):
         raise ValueError("station_id is required.")
@@ -239,7 +295,11 @@ def _dispatch_tool(name: str, raw_arguments: str):
     if connector_id is not None and not isinstance(connector_id, str):
         raise ValueError("connector_id must be a string.")
     if name == "get_station_history":
-        return {"health": station_health(station, SNAPSHOT), "days": history(station, connector_id)}
+        return {
+            "health": station_health(station, SNAPSHOT),
+            "health_scope": "station",
+            "days": history(station, connector_id),
+        }
     if name == "get_maintenance_records":
         return maintenance_records(station, connector_id)
     raise ValueError("Unsupported tool.")
@@ -256,7 +316,7 @@ def _extract_text_and_citations(output: list[dict]) -> tuple[str, list[dict]]:
                     for annotation in content.get("annotations", []):
                         reference = annotation.get("url_citation")
                         url = reference.get("url") if isinstance(reference, dict) else None
-                        if isinstance(url, str) and url.startswith(("https://", "http://")):
+                        if isinstance(url, str) and url.startswith("https://"):
                             citations.append(
                                 {
                                     "title": str(reference.get("title") or "Source"),
@@ -264,6 +324,44 @@ def _extract_text_and_citations(output: list[dict]) -> tuple[str, list[dict]]:
                                 }
                             )
     return "\n".join(text).strip(), citations
+
+
+def _extract_mcp_citations(calls: list[dict]) -> list[dict]:
+    citations = []
+    for call in calls:
+        result = call.get("result")
+        if not isinstance(result, dict):
+            continue
+        candidates = result.get("citations", [])
+        if not isinstance(candidates, list):
+            continue
+        for source in candidates:
+            if not isinstance(source, dict):
+                continue
+            title = source.get("title") or source.get("name")
+            if not isinstance(title, str) or not title.strip():
+                continue
+            citation = {"title": title[:200]}
+            url = source.get("url")
+            has_location = False
+            if isinstance(url, str) and url.startswith("https://"):
+                citation["url"] = url
+                has_location = True
+            section = source.get("section")
+            if isinstance(section, str) and section:
+                citation["section"] = section[:200]
+                has_location = True
+            page = source.get("page")
+            if isinstance(page, (str, int)) and not isinstance(page, bool):
+                citation["page"] = page
+                has_location = True
+            for field in ("source", "version", "date"):
+                value = source.get(field)
+                if isinstance(value, str) and value:
+                    citation[field] = value[:200]
+            if has_location:
+                citations.append(citation)
+    return citations
 
 
 def _operational_references(activity: list[dict]) -> list[dict]:
@@ -300,11 +398,19 @@ def _json_error(status: int, detail: str):
 
 
 STATIC_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
+APPROVED_SOURCES = {
+    "scoring": KNOWLEDGE_DIR / "asset-health-scoring.md",
+    "data-dictionary": KNOWLEDGE_DIR / "asset-health-data-dictionary.md",
+    "investigation-guide": KNOWLEDGE_DIR / "asset-health-investigation-guide.md",
+}
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
     def frontend(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, "API route not found.")
         candidate = (STATIC_DIR / path).resolve()
         if candidate.is_file() and STATIC_DIR.resolve() in candidate.parents:
             return FileResponse(candidate)

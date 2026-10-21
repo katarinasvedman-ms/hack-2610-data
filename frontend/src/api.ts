@@ -25,6 +25,11 @@ export type SnapshotResponse = {
   stations: HealthRow[]
 }
 
+export type ServiceStatus = {
+  auth_required: boolean
+  foundry_configured: boolean
+}
+
 export type StationDetail = {
   station: {
     station_id: string
@@ -69,6 +74,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const getHealth = (sort: string, importance: string) =>
   request<SnapshotResponse>(`/api/health?sort=${sort}${importance ? `&importance=${importance}` : ''}`)
 
+export const getStatus = () => request<ServiceStatus>('/api/status')
+
 export const getStation = (id: string) => request<StationDetail>(`/api/stations/${encodeURIComponent(id)}`)
 
 export const getHistory = (id: string) =>
@@ -78,8 +85,16 @@ export type ChatResult = {
   conversation_id: string
   answer: string
   activity: { type: string; status: string; tool?: string }[]
-  citations: { title: string; url: string }[]
-  operational_references: { source: string; record_type: string; classification: string }[]
+  citations: {
+    title: string
+    url?: string
+    section?: string
+    page?: string | number
+    source?: string
+    version?: string
+    date?: string
+  }[]
+  operational_references: { source: string; record_type: string; record_id: string; classification: string }[]
   notice: string
 }
 

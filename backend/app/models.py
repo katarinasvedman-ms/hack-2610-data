@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class Connector(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    connector_id: str
+    connector_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,16}$")
     rated_kw: float = Field(gt=0)
     state: Literal["available", "in_use", "unknown"]
 
@@ -34,7 +34,7 @@ class AttemptCounts(BaseModel):
 class FaultEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    fault_id: str
+    fault_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
     occurred_at: datetime
     code: str
     category: Literal["station_side", "auth_roaming_payment"]
@@ -44,6 +44,8 @@ class FaultEvent(BaseModel):
 
     @model_validator(mode="after")
     def validate_scope(self):
+        if self.occurred_at.utcoffset() != timedelta(0):
+            raise ValueError("fault timestamps must be UTC")
         if self.scope == "connector" and self.connector_id is None:
             raise ValueError("connector faults require a connector_id")
         if self.scope == "station" and self.connector_id is not None:
@@ -63,30 +65,40 @@ class DailyObservation(BaseModel):
 
     @model_validator(mode="after")
     def validate_availability(self):
+        if (self.available_minutes is None) != (self.eligible_minutes is None):
+            raise ValueError("available and eligible minutes must be observed together")
         if (
             self.available_minutes is not None
             and self.eligible_minutes is not None
             and self.available_minutes > self.eligible_minutes
         ):
             raise ValueError("available minutes cannot exceed eligible minutes")
+        if any(fault.occurred_at.date() != self.date for fault in self.faults or []):
+            raise ValueError("fault timestamp date must match its daily observation")
         return self
 
 
 class MaintenanceRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    record_id: str
-    station_id: str
+    record_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    station_id: str = Field(pattern=r"^[A-Z0-9-]{1,32}$")
     occurred_at: datetime
     status: Literal["completed", "scheduled", "open"]
     summary: str
     connector_id: str | None = None
 
+    @model_validator(mode="after")
+    def validate_utc(self):
+        if self.occurred_at.utcoffset() != timedelta(0):
+            raise ValueError("maintenance timestamps must be UTC")
+        return self
+
 
 class Station(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    station_id: str
+    station_id: str = Field(pattern=r"^[A-Z0-9-]{1,32}$")
     classification: Literal["MOCK"]
     site_name: str
     region: str
@@ -121,6 +133,14 @@ class Station(BaseModel):
                 raise ValueError("maintenance record station_id does not match station")
             if record.connector_id is not None and record.connector_id not in ids:
                 raise ValueError("maintenance record references an unknown connector")
+        fault_ids = [
+            fault.fault_id for day in self.daily for fault in day.faults or []
+        ]
+        maintenance_ids = [record.record_id for record in self.maintenance]
+        if len(fault_ids) != len(set(fault_ids)):
+            raise ValueError("fault identifiers must be unique within a station")
+        if len(maintenance_ids) != len(set(maintenance_ids)):
+            raise ValueError("maintenance identifiers must be unique within a station")
         return self
 
 
@@ -134,13 +154,19 @@ class Snapshot(BaseModel):
 
     @model_validator(mode="after")
     def validate_snapshot(self):
+        if self.snapshot_at.utcoffset() != timedelta(0):
+            raise ValueError("snapshot timestamp must be UTC")
         ids = [station.station_id for station in self.stations]
         if len(ids) != len(set(ids)):
             raise ValueError("station identifiers must be unique")
         if any(len(station.daily) != self.window_days for station in self.stations):
             raise ValueError("each station must have exactly window_days observations")
+        expected_dates = [
+            self.snapshot_at.date() - timedelta(days=self.window_days - index)
+            for index in range(self.window_days)
+        ]
         for station in self.stations:
             dates = [day.date for day in station.daily]
-            if len(set(dates)) != len(dates):
-                raise ValueError("station daily dates must be unique")
+            if dates != expected_dates:
+                raise ValueError("daily observations must cover the contiguous window before the snapshot")
         return self

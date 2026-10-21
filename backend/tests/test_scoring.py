@@ -21,6 +21,21 @@ def test_scoring_uses_documented_weighted_formula():
     ))
 
 
+def test_missing_availability_days_are_not_counted_as_zero_minutes():
+    snapshot = build_snapshot()
+    station = next(item for item in snapshot.stations if item.station_id == "ST-001")
+    station.daily[0].eligible_minutes = None
+    station.daily[0].available_minutes = None
+    result = station_health(station, snapshot)
+    component = result["components"]["availability"]
+    assert component["score"] == round(
+        100 * sum(day.available_minutes or 0 for day in station.daily[1:])
+        / sum(day.eligible_minutes or 0 for day in station.daily[1:]),
+        1,
+    )
+    assert component["coverage"].startswith("29/30 days")
+
+
 def test_authentication_failures_are_not_station_faults():
     snapshot = build_snapshot()
     station = next(item for item in snapshot.stations if item.station_id == "ST-002")
@@ -82,3 +97,11 @@ def test_fixture_relationship_validation_rejects_unknown_fault_connector():
     except Exception:
         return
     raise AssertionError("invalid connector reference was accepted")
+
+
+def test_snapshot_validation_rejects_a_gap_in_the_30_day_window():
+    snapshot = build_snapshot()
+    invalid = snapshot.model_dump()
+    invalid["stations"][0]["daily"][10]["date"] = "2026-09-20"
+    with pytest.raises(Exception, match="contiguous window"):
+        Snapshot.model_validate(invalid)

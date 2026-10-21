@@ -7,7 +7,9 @@ import {
   getStation,
   HealthRow,
   HistoryDay,
+  getStatus,
   SnapshotResponse,
+  ServiceStatus,
   StationDetail,
 } from './api'
 import { formatSnapshot, healthLabel } from './format'
@@ -19,9 +21,15 @@ const componentLabels = {
   charging_success: 'Charging success',
   station_faults: 'Recurring station-side faults',
 } as const
+const approvedSourceIds: Record<string, string> = {
+  'Asset Health PoC illustrative scoring': 'scoring',
+  'Asset Health PoC data dictionary': 'data-dictionary',
+  'Asset Health PoC investigation guide': 'investigation-guide',
+}
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<SnapshotResponse | null>(null)
+  const [serviceStatus, setServiceStatus] = useState<ServiceStatus | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<StationDetail | null>(null)
   const [history, setHistory] = useState<HistoryDay[]>([])
@@ -35,6 +43,10 @@ export default function App() {
   const [question, setQuestion] = useState('')
   const [conversationId, setConversationId] = useState<string>()
   const [chatLoading, setChatLoading] = useState(false)
+
+  useEffect(() => {
+    getStatus().then(setServiceStatus).catch(() => setServiceStatus(null))
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -108,7 +120,7 @@ export default function App() {
           <span>fieldnotes<span className="brand-dot">.</span></span>
         </a>
         <div className="topbar-right">
-          <span className="secure-label"><span className="secure-dot" /> Entra protected</span>
+          <span className="secure-label"><span className="secure-dot" /> {serviceStatus ? serviceStatus.auth_required ? 'Entra protected' : 'Local auth off' : 'Checking access…'}</span>
           <span className="avatar">AH</span>
         </div>
       </header>
@@ -194,7 +206,7 @@ export default function App() {
             <h2>Ask the investigator</h2>
             <p>Structured station records and approved reference material, kept distinct.</p>
           </div>
-          <span className="agent-status"><span className="secure-dot" /> Foundry agent</span>
+          <span className="agent-status"><span className="secure-dot" /> {serviceStatus ? serviceStatus.foundry_configured ? 'Configured · checked on request' : 'Foundry not configured' : 'Configuration unavailable'}</span>
         </div>
         <div className="chat-content">
           <div className="chat-messages" aria-live="polite">
@@ -265,7 +277,7 @@ function StationRow({ row, rank, active, onClick }: { row: HealthRow; rank?: num
 }
 
 function StationDetailView({ detail, row, history }: { detail: StationDetail; row: HealthRow; history: HistoryDay[] }) {
-  const latest = history.slice(-14)
+  const latest = history
   return (
     <div>
       <div className="detail-head">
@@ -296,7 +308,7 @@ function StationDetailView({ detail, row, history }: { detail: StationDetail; ro
         })}
       </div>
 
-      <div className="section-divider trend-heading"><span>RECENT OPERATIONS</span><span>Daily, last 14 of 30 days</span></div>
+      <div className="section-divider trend-heading"><span>RECENT OPERATIONS</span><span>Daily, 30-day window</span></div>
       <div className="trend-chart" aria-label="Daily availability trend">
         {latest.map((day) => {
           const percent = day.eligible_minutes && day.available_minutes !== null ? day.available_minutes / day.eligible_minutes * 100 : 0
@@ -331,8 +343,11 @@ function MessageSources({ result }: { result: ChatResult }) {
     <div className="source-list">
       {result.notice && <small className="mock-notice">{result.notice}</small>}
       {result.citations.map((citation, index) => (
-        <a key={`${citation.url}-${index}`} href={citation.url} target="_blank" rel="noopener noreferrer">↗ {citation.title}</a>
+        citation.url || (citation.source === 'AssetHealthPoCReference' && approvedSourceIds[citation.title])
+          ? <a key={`${citation.url ?? citation.title}-${index}`} href={citation.url ?? `/api/sources/${approvedSourceIds[citation.title]}`} target="_blank" rel="noopener noreferrer">↗ {citation.title}{citation.page ? ` · p. ${citation.page}` : ''}{citation.section ? ` · ${citation.section}` : ''}{citation.source ? ` · ${citation.source}` : ''}{citation.version ? ` · v${citation.version}` : ''}{citation.date ? ` · ${citation.date}` : ''}</a>
+          : <span key={`${citation.title}-${index}`}>▤ {citation.title}{citation.page ? ` · p. ${citation.page}` : ''}{citation.section ? ` · ${citation.section}` : ''}{citation.source ? ` · ${citation.source}` : ''}{citation.version ? ` · v${citation.version}` : ''}{citation.date ? ` · ${citation.date}` : ''}</span>
       ))}
+      {result.citations.length === 0 && <small className="mock-notice">No source citation returned by this investigation.</small>}
       {result.operational_references.map((reference, index) => (
         <span key={`${reference.record_id}-${index}`}>▤ {reference.record_id} · {reference.classification}</span>
       ))}

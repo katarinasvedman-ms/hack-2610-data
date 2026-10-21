@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 
 from .models import (
     AttemptCounts,
@@ -156,6 +157,11 @@ def build_snapshot() -> Snapshot:
         window_days=WINDOW_DAYS,
         stations=stations,
     )
+
+
+def load_snapshot() -> Snapshot:
+    fixture_path = Path(__file__).resolve().parents[1] / "data" / "stations.json"
+    return Snapshot.model_validate_json(fixture_path.read_text(encoding="utf-8"))
 
 
 def _fault(station_id: str, day: date, code: str, description: str, index: int) -> FaultEvent:

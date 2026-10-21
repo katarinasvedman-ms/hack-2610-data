@@ -1,0 +1,49 @@
+[
+  {
+    "type": "function",
+    "name": "list_station_health",
+    "description": "Read the shared 30-day synthetic station scores, component coverage, importance and escalation flags.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "sort": {
+          "type": "string",
+          "enum": ["priority", "health", "importance"]
+        }
+      },
+      "required": ["sort"],
+      "additionalProperties": false
+    },
+    "strict": true
+  },
+  {
+    "type": "function",
+    "name": "get_station_history",
+    "description": "Read bounded daily status, attempt and fault history for one exact station and optional connector.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "station_id": { "type": "string" },
+        "connector_id": { "type": ["string", "null"] }
+      },
+      "required": ["station_id", "connector_id"],
+      "additionalProperties": false
+    },
+    "strict": true
+  },
+  {
+    "type": "function",
+    "name": "get_maintenance_records",
+    "description": "Read synthetic maintenance records for one exact station and optional connector.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "station_id": { "type": "string" },
+        "connector_id": { "type": ["string", "null"] }
+      },
+      "required": ["station_id", "connector_id"],
+      "additionalProperties": false
+    },
+    "strict": true
+  }
+]
