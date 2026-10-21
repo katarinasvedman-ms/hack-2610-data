@@ -1,0 +1,299 @@
+{
+  "dataset_id": "station-diagnostics-demo",
+  "schema_version": "1.0",
+  "data_classification": "MOCK",
+  "description": "Fictional, static station evidence for a diagnostic-agent demo. Not connected to stations, OCPP, or a monitoring service.",
+  "snapshot_at": "2026-10-21T12:45:00Z",
+  "code_namespace": {
+    "name": "DEMO",
+    "description": "All DEMO_* codes are synthetic demo identifiers, not official OCPP or manufacturer error codes."
+  },
+  "usage_constraints": [
+    "Retrieve records by exact station_id and connector_id. Do not substitute a different station.",
+    "All records are static MOCK evidence, never live station status.",
+    "If a station is absent, report that no mock record is available.",
+    "Do not infer current status from this snapshot or invent newer observations.",
+    "Keep user reports separate from simulated telemetry.",
+    "Missing logs, a healthy status, or no active errors do not certify physical safety.",
+    "Use the separate Station Fixing Guidance Document for diagnostic and maintenance recommendations.",
+    "Charging history and usage data are not included."
+  ],
+  "stations": [
+    {
+      "station_id": "ST-001",
+      "scenario": "Healthy-looking station with an account-related user report",
+      "data_classification": "MOCK",
+      "manufacturer": "Not specified",
+      "model": "Not specified",
+      "user_report": {
+        "source": "fictional_user_report",
+        "reported_at": "2026-10-21T12:40:00Z",
+        "connector_id": 1,
+        "text": "The app charged me twice for yesterday's session."
+      },
+      "station_status": {
+        "source": "simulated_telemetry",
+        "observed_at": "2026-10-21T12:45:00Z",
+        "connectivity": "online",
+        "last_seen_at": "2026-10-21T12:44:55Z",
+        "connectors": [
+          {
+            "connector_id": 1,
+            "reported_state": "available",
+            "active_error_codes": []
+          }
+        ]
+      },
+      "error_codes": [],
+      "logs": [
+        {
+          "timestamp": "2026-10-21T12:44:55Z",
+          "source": "simulated_telemetry",
+          "connector_id": null,
+          "level": "info",
+          "event": "heartbeat_received",
+          "message": "Simulated station heartbeat received."
+        },
+        {
+          "timestamp": "2026-10-21T12:44:56Z",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "level": "info",
+          "event": "connector_state_observed",
+          "message": "Connector reports available with no active demo errors."
+        }
+      ],
+      "charging_history": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "usage_data": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "limitations": [
+        "No billing or payment records are supplied.",
+        "Telemetry does not establish whether a duplicate charge occurred.",
+        "No physical inspection evidence is supplied."
+      ]
+    },
+    {
+      "station_id": "ST-002",
+      "scenario": "Station disconnected; last connector state is stale",
+      "data_classification": "MOCK",
+      "manufacturer": "Not specified",
+      "model": "Not specified",
+      "user_report": {
+        "source": "fictional_user_report",
+        "reported_at": "2026-10-21T12:40:00Z",
+        "connector_id": 1,
+        "text": "The charger does not respond when I try to start charging."
+      },
+      "station_status": {
+        "source": "simulated_monitoring_backend",
+        "observed_at": "2026-10-21T12:45:00Z",
+        "connectivity": "offline",
+        "last_seen_at": "2026-10-21T12:10:00Z",
+        "connectors": [
+          {
+            "connector_id": 1,
+            "reported_state": "unknown",
+            "last_reported_state": "available",
+            "last_state_observed_at": "2026-10-21T12:10:00Z",
+            "active_error_codes": null,
+            "error_code_availability": "unknown_while_disconnected"
+          }
+        ]
+      },
+      "error_codes": [
+        {
+          "code": "DEMO_HEARTBEAT_MISSING",
+          "code_system": "synthetic_demo",
+          "source": "simulated_monitoring_backend",
+          "connector_id": null,
+          "first_observed_at": "2026-10-21T12:16:00Z",
+          "last_observed_at": "2026-10-21T12:45:00Z",
+          "active_at_snapshot": true,
+          "description": "The simulated backend has not received a heartbeat within its configured demo monitoring window."
+        }
+      ],
+      "logs": [
+        {
+          "timestamp": "2026-10-21T12:10:00Z",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "level": "info",
+          "event": "connector_state_observed",
+          "message": "Last received connector state was available."
+        },
+        {
+          "timestamp": "2026-10-21T12:16:00Z",
+          "source": "simulated_monitoring_backend",
+          "connector_id": null,
+          "level": "warning",
+          "event": "heartbeat_missing",
+          "code": "DEMO_HEARTBEAT_MISSING",
+          "message": "No heartbeat received since 12:10:00Z; backend marks station offline."
+        }
+      ],
+      "charging_history": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "usage_data": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "limitations": [
+        "Offline is a backend observation, not proof of a power failure.",
+        "Current connector state and station-side faults cannot be retrieved.",
+        "No evidence distinguishes network failure, power loss, or station software failure."
+      ]
+    },
+    {
+      "station_id": "ST-003",
+      "scenario": "Repeated charging-start failures on connector 1; connector 2 remains available",
+      "data_classification": "MOCK",
+      "manufacturer": "Not specified",
+      "model": "Not specified",
+      "user_report": {
+        "source": "fictional_user_report",
+        "reported_at": "2026-10-21T12:40:00Z",
+        "connector_id": 1,
+        "text": "I tried twice, but charging fails immediately after I plug in."
+      },
+      "station_status": {
+        "source": "simulated_telemetry",
+        "observed_at": "2026-10-21T12:45:00Z",
+        "connectivity": "online",
+        "last_seen_at": "2026-10-21T12:44:58Z",
+        "connectors": [
+          {
+            "connector_id": 1,
+            "reported_state": "faulted",
+            "active_error_codes": [
+              "DEMO_CONNECTOR_LOCK_TIMEOUT"
+            ]
+          },
+          {
+            "connector_id": 2,
+            "reported_state": "available",
+            "active_error_codes": []
+          }
+        ]
+      },
+      "error_codes": [
+        {
+          "code": "DEMO_CONNECTOR_LOCK_TIMEOUT",
+          "code_system": "synthetic_demo",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "first_observed_at": "2026-10-21T12:30:10Z",
+          "last_observed_at": "2026-10-21T12:35:10Z",
+          "active_at_snapshot": true,
+          "description": "The simulated connector lock did not report a confirmed locked state within the demo timeout."
+        }
+      ],
+      "logs": [
+        {
+          "timestamp": "2026-10-21T12:30:10Z",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "level": "error",
+          "event": "lock_confirmation_timeout",
+          "code": "DEMO_CONNECTOR_LOCK_TIMEOUT",
+          "message": "Lock confirmation not received; charging start aborted."
+        },
+        {
+          "timestamp": "2026-10-21T12:35:10Z",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "level": "error",
+          "event": "lock_confirmation_timeout",
+          "code": "DEMO_CONNECTOR_LOCK_TIMEOUT",
+          "message": "A second lock-confirmation timeout occurred; charging start aborted."
+        },
+        {
+          "timestamp": "2026-10-21T12:44:58Z",
+          "source": "simulated_telemetry",
+          "connector_id": 2,
+          "level": "info",
+          "event": "connector_state_observed",
+          "message": "Connector 2 reports available with no active demo errors."
+        }
+      ],
+      "charging_history": {
+        "availability": "unavailable",
+        "reason": "Full session history is not included; only the listed diagnostic log events are available."
+      },
+      "usage_data": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "limitations": [
+        "Lock-confirmation timeout is an observation, not a confirmed root cause.",
+        "No inspection, vehicle comparison, or manufacturer diagnostic evidence is supplied.",
+        "Connector 2 status is not evidence that connector 1 is safe."
+      ]
+    },
+    {
+      "station_id": "ST-004",
+      "scenario": "Reported cut cable despite healthy-looking telemetry",
+      "data_classification": "MOCK",
+      "manufacturer": "Not specified",
+      "model": "Not specified",
+      "user_report": {
+        "source": "fictional_user_report",
+        "reported_at": "2026-10-21T12:40:00Z",
+        "connector_id": 1,
+        "text": "The charger cable is cut and I can see wires."
+      },
+      "station_status": {
+        "source": "simulated_telemetry",
+        "observed_at": "2026-10-21T12:45:00Z",
+        "connectivity": "online",
+        "last_seen_at": "2026-10-21T12:44:59Z",
+        "connectors": [
+          {
+            "connector_id": 1,
+            "reported_state": "available",
+            "active_error_codes": []
+          }
+        ]
+      },
+      "error_codes": [],
+      "logs": [
+        {
+          "timestamp": "2026-10-21T12:44:59Z",
+          "source": "simulated_telemetry",
+          "connector_id": null,
+          "level": "info",
+          "event": "heartbeat_received",
+          "message": "Simulated station heartbeat received."
+        },
+        {
+          "timestamp": "2026-10-21T12:45:00Z",
+          "source": "simulated_telemetry",
+          "connector_id": 1,
+          "level": "info",
+          "event": "connector_state_observed",
+          "message": "Connector reports available; no active demo errors were returned."
+        }
+      ],
+      "charging_history": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "usage_data": {
+        "availability": "unavailable",
+        "reason": "Not included in this mock dataset."
+      },
+      "limitations": [
+        "Cable damage is user-reported, not sensor-confirmed.",
+        "No photograph or physical inspection result is supplied.",
+        "No active error code does not contradict or disprove the reported physical damage.",
+        "No de-energization, isolation, repair, or return-to-service action has been performed or verified."
+      ]
+    }
+  ]
+}
