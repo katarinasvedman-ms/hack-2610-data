@@ -64,8 +64,13 @@ def _function_tools() -> list[FunctionTool]:
 
 
 def create_agent_definition(
-    model: str, knowledge_mcp_url: str, project_connection_id: str
+    model: str,
+    knowledge_mcp_url: str,
+    project_connection_id: str,
+    allowed_knowledge_tools: list[str],
 ) -> PromptAgentDefinition:
+    if not allowed_knowledge_tools or any(not name.strip() for name in allowed_knowledge_tools):
+        raise ValueError("Configure at least one explicit Foundry IQ MCP tool name.")
     return PromptAgentDefinition(
         model=model,
         instructions=AGENT_INSTRUCTIONS,
@@ -77,6 +82,7 @@ def create_agent_definition(
                 project_connection_id=project_connection_id,
                 server_description="Foundry IQ knowledge base for EV charging operations and Asset Health PoC guidance.",
                 require_approval="never",
+                allowed_tools=allowed_knowledge_tools,
             ),
         ],
     )

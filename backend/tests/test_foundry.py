@@ -10,6 +10,7 @@ class FoundryTests(unittest.TestCase):
             "asset-health-model",
             "https://example.test/knowledge/mcp",
             "asset-health-connection",
+            ["read_knowledge"],
         ).as_dict()
         tools = definition["tools"]
         function_names = {tool["name"] for tool in tools if tool["type"] == "function"}
@@ -21,6 +22,11 @@ class FoundryTests(unittest.TestCase):
         self.assertEqual(mcp["server_url"], "https://example.test/knowledge/mcp")
         self.assertEqual(mcp["project_connection_id"], "asset-health-connection")
         self.assertEqual(mcp["require_approval"], "never")
+        self.assertEqual(mcp["allowed_tools"], ["read_knowledge"])
+
+    def test_agent_requires_an_explicit_knowledge_tool_allow_list(self):
+        with self.assertRaises(ValueError):
+            create_agent_definition("model", "https://example.test/mcp", "connection", [])
 
     def test_read_only_tools_are_station_scoped_and_bounded(self):
         result = _tool_result("get_station_history", {"station_id": "SE-001", "days": 31})

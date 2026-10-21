@@ -115,10 +115,14 @@ Foundry IQ knowledge base.
    Grant the Search/knowledge-base identity only the data access required by
    the chosen Foundry IQ ingestion configuration.
 3. Create the knowledge-base MCP project connection in Foundry, and obtain its
-   exact MCP URL and project connection ID from that configuration. Grant the
-   Container App managed identity the appropriate project/agent and knowledge
-   source permissions. Do not copy an access token or credential into the
-   repository.
+   exact MCP URL, project connection ID, and read-only tool name(s) from that
+   configuration. The agent allow-lists only the tool names you provide; do not
+   guess them or point it at an untrusted MCP server. Project-client
+   authentication and remote MCP authentication are separate; configure the
+   project connection's supported authentication for the knowledge base, then
+   grant the Container App managed identity the appropriate project/agent and
+   knowledge-source permissions. Do not copy an access token or credential
+   into the repository.
 4. Set these environment variables in the backend environment:
 
    ```bash
@@ -127,6 +131,7 @@ Foundry IQ knowledge base.
    AZURE_AI_MODEL_DEPLOYMENT=<available-model-deployment>
    FOUNDRY_IQ_MCP_URL=<exact-knowledge-base-MCP-URL>
    FOUNDRY_IQ_PROJECT_CONNECTION_ID=<Foundry-project-connection-ID>
+   FOUNDRY_IQ_ALLOWED_TOOLS=<read-only-MCP-tool-name-from-server>
    ```
 
    Use an authenticated Azure CLI login locally. The deployment uses the

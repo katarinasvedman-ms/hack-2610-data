@@ -22,6 +22,13 @@ def main() -> None:
     model = required("AZURE_AI_MODEL_DEPLOYMENT")
     knowledge_url = required("FOUNDRY_IQ_MCP_URL")
     connection_id = required("FOUNDRY_IQ_PROJECT_CONNECTION_ID")
+    allowed_tools = [
+        name.strip()
+        for name in required("FOUNDRY_IQ_ALLOWED_TOOLS").split(",")
+        if name.strip()
+    ]
+    if not allowed_tools:
+        raise SystemExit("FOUNDRY_IQ_ALLOWED_TOOLS must list at least one MCP tool.")
     project = AIProjectClient(
         endpoint=endpoint,
         credential=DefaultAzureCredential(),
@@ -30,7 +37,7 @@ def main() -> None:
     try:
         result = project.agents.create_version(
             agent_name=agent_name,
-            definition=create_agent_definition(model, knowledge_url, connection_id),
+            definition=create_agent_definition(model, knowledge_url, connection_id, allowed_tools),
             description="Read-only Asset Health investigator grounded by Foundry IQ.",
         )
         print(f"Created Foundry agent {agent_name!r}, version {result.version}.")
